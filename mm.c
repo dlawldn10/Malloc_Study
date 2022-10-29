@@ -138,6 +138,7 @@ static void *extend_heap(size_t words){
  */
 void *mm_malloc(size_t size)
 {
+    //
     int newsize = ALIGN(size + SIZE_T_SIZE);
     void *p = mem_sbrk(newsize);
     if (p == (void *)-1)
