@@ -86,15 +86,15 @@ static void *extend_heap(size_t);
 void *mm_malloc(size_t);
 void mm_free(void *);
 void *mm_realloc(void *, size_t);
+static void *find_fit(size_t);
+static void place(void *, size_t);
 
-
-/* 
- * mm_init - initialize the malloc package.
- */
+//최초 가용 블록으로 힙 생성하기
 int mm_init(void)
 {
+    heap_listp = mem_sbrk(4*WSIZE);
     // 메모리 시스템에서 4워드를 가져와서 초기화한다.
-    if ((heap_listp == mem_sbrk(4*WSIZE)) == (void *)-1) return -1;
+    if ((heap_listp) == (void *)-1) return -1;
     // alignment padding
     PUT(heap_listp, 0);
     // 프롤로그 헤더
@@ -129,7 +129,7 @@ static void *extend_heap(size_t words){
 
     // 두개의 가용 블록을 통합하기 위해 coalese함수 호출하고
     // 통합된 블록의 블록 포인터를 리턴한다.
-    return coalesce(dp);
+    return coalesce(bp);
 }
 
 /* 
@@ -138,21 +138,39 @@ static void *extend_heap(size_t words){
  */
 void *mm_malloc(size_t size)
 {
-    //
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
-	return NULL;
-    else {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
+    // int newsize = ALIGN(size + SIZE_T_SIZE);
+    // void *p = mem_sbrk(newsize);
+    // if (p == (void *)-1)
+	// return NULL;
+    // else {
+    //     *(size_t *)p = size;
+    //     return (void *)((char *)p + SIZE_T_SIZE);
+    // }
+
+    size_t asize;
+    size_t extendsize;
+    char *bp;
+
+    if (size == 0) return NULL;
+
+    if (size <= DSIZE) asize = 2*DSIZE;
+    else asize = DSIZE * ((size + (DSIZE) + (DSIZE-1))/ DSIZE);
+
+    if ((bp = find_fit(asize)) != NULL){
+        place(bp, asize);
+        return bp;
     }
+
+    extendsize = MAX(asize, CHUNKSIZE);
+    if ((bp = extend_heap(extendsize/WSIZE)) == NULL) return NULL;
+    place(bp, asize);
+    return bp;
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
 
@@ -174,7 +192,7 @@ static void *coalesce(void *bp){
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
     }
-    else if (!prev_alloc %% next_alloc){
+    else if (!prev_alloc && next_alloc){
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -208,6 +226,33 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
+}
+
+static void *find_fit(size_t asize){
+    void *bp;
+
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
+            return bp;
+        }
+    }
+    return NULL;
+
+}
+
+static void place(void *bp, size_t asize){
+    size_t csize = GET_SIZE(HDRP(bp));
+
+    if ((csize - asize) >= (2*DSIZE)){
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        bp = NEXT_BLKP(bp);
+        PUT(HDRP(bp), PACK(csize-asize, 0));
+        PUT(FTRP(bp), PACK(csize-asize, 0));
+    }else{
+        PUT(HDRP(bp), PACK(csize, 1));
+        PUT(FTRP(bp), PACK(csize, 1));
+    }
 }
 
 
