@@ -1,3 +1,5 @@
+//explicit 방법 및 주석 추가
+
 /*
  * mm-naive.c - The fastest, least memory-efficient malloc package.
  * 
