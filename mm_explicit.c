@@ -18,10 +18,7 @@
 #include "mm.h"
 #include "memlib.h"
 
-/*********************************************************
- * NOTE TO STUDENTS: Before you do anything else, please
- * provide your team information in the following struct.
- ********************************************************/
+
 team_t team = {
     "team5",
     "Jiwoo Lim",
@@ -103,7 +100,9 @@ void putFreeBlock(void *);
 void removeBlock(void *);
 
 
+// 힙의 맨 위 블록을 가리키는 포인터
 static char *heap_listp = NULL;
+
 // free list의 맨 첫 블록을 가리키는 포인터
 static char* free_listp = NULL;
 

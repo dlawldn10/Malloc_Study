@@ -11,31 +11,49 @@
 
 // 더블워드 정렬을 수행한다.
 #define ALIGNMENT 8
+// size(변수)보다 크면서 가장 가까운 8(ALIGNMENT)의 배수로 만들어주는 것.
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
 #define WSIZE 4
 #define DSIZE 8
+
+// 초기 가용 블록과 힙 확장을 위한 기본 크기
 #define INITCHUNKSIZE (1<<6)
 #define CHUNKSIZE (1<<12)
 
-#define LISTLIMIT 20 
+#define LISTLIMIT 20
 
+// x가 크면 x리턴, t가 크면 y리턴
 #define MAX(x, y) ((x) > (y) ? (x) : (y)) 
 
+// 크기와 할당 비트를 통합해서 헤더와 푸터에 저장할 수 있는 값을 리턴한다.
+// 비트 OR 연산자 |
+// 각 자리수를 비교하여 하나라도 1이 있으면 1이 된다.
 #define PACK(size, alloc) ((size) | (alloc))
- 
-#define GET(p)            (*(unsigned int *)(p))
-#define PUT(p, val)       (*(unsigned int *)(p) = (val))
+
+// 인자 p가 참조하는 워드를 읽어서 리턴한다.
+#define GET(p) (*(unsigned int *)(p))
+// 인자 p가 가리키는 워드에 val을 저장한다.
+#define PUT(p, val) (*(unsigned int *)(p) = (val))
 
 #define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
 
+// 주소 p에 있는 헤더/푸터의 사이즈를 리턴한다.
 #define GET_SIZE(p)  (GET(p) & ~0x7)
+// 주소 p에 있는 헤더/푸터의 할당 비트를 리턴한다.
 #define GET_ALLOC(p) (GET(p) & 0x1)
 
+// bp(블록 포인터)가 주어지면
+// 블록 헤더를 가리키는 포인터를 리턴한다.
 #define HDRP(ptr) ((char *)(ptr) - WSIZE)
+// 푸터를 가리키는 포인터를 리턴한다.
 #define FTRP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr)) - DSIZE)
 
+// 다음 블록의 포인터 리턴
+// 지금 위치 + GET_SIZE(본인 헤더 -> 본인 크기)
 #define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE((char *)(ptr) - WSIZE))
+// 이전 블록의 포인터 리턴
+// 지금 위치 - GET_SIZE(이전 블록 풋터 -> 이전 블록 크기)
 #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE((char *)(ptr) - DSIZE))
 
 #define PRED_PTR(ptr) ((char *)(ptr))
@@ -86,19 +104,19 @@ static void *extend_heap(size_t size)
 
 // segregated_free_list에 free block을 추가한다.
 static void insert_node(void *ptr, size_t size) {
-    int list = 0;
+    int idx = 0;
     void *search_ptr = ptr;
     void *insert_ptr = NULL;
     
     // block의 크기에 따라 들어갈 리스트를 찾는다.
     // next 포인터를 참조해야 하므로 에러를 막기 위해 LISTLIMIT - 1까지만 돈다.
-    while ((list < LISTLIMIT - 1) && (size > 1)) {
+    while ((idx < LISTLIMIT - 1) && (size > 1)) {
         size >>= 1;
-        list++;
+        idx++;
     }
     
     // 오름차순 정렬을 유지하면서 들어갈 자리를 찾는다.
-    search_ptr = segregated_free_lists[list];
+    search_ptr = segregated_free_lists[idx];
     while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr)))) {
         // 다음 블록 포인터
         insert_ptr = search_ptr;
@@ -122,7 +140,7 @@ static void insert_node(void *ptr, size_t size) {
             SET_PTR(PRED_PTR(ptr), search_ptr);
             SET_PTR(SUCC_PTR(search_ptr), ptr);
             SET_PTR(SUCC_PTR(ptr), NULL);
-            segregated_free_lists[list] = ptr;
+            segregated_free_lists[idx] = ptr;
         }
     } 
     // pred가 없고
@@ -139,7 +157,7 @@ static void insert_node(void *ptr, size_t size) {
         else {
             SET_PTR(PRED_PTR(ptr), NULL);
             SET_PTR(SUCC_PTR(ptr), NULL);
-            segregated_free_lists[list] = ptr;
+            segregated_free_lists[idx] = ptr;
         }
     }
     
@@ -149,13 +167,13 @@ static void insert_node(void *ptr, size_t size) {
 
 // segregated_free_list에 free block을 삭제한다.
 static void delete_node(void *ptr) {
-    int list = 0;
+    int idx = 0;
     size_t size = GET_SIZE(HDRP(ptr));
     
     // Select segregated list 
-    while ((list < LISTLIMIT - 1) && (size > 1)) {
+    while ((idx < LISTLIMIT - 1) && (size > 1)) {
         size >>= 1;
-        list++;
+        idx++;
     }
     
     // insert_node와 비슷하게 경우가 나누어진다.
@@ -165,13 +183,13 @@ static void delete_node(void *ptr) {
             SET_PTR(PRED_PTR(SUCC(ptr)), PRED(ptr));
         } else {
             SET_PTR(SUCC_PTR(PRED(ptr)), NULL);
-            segregated_free_lists[list] = PRED(ptr);
+            segregated_free_lists[idx] = PRED(ptr);
         }
     } else {
         if (SUCC(ptr) != NULL) {
             SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
         } else {
-            segregated_free_lists[list] = NULL;
+            segregated_free_lists[idx] = NULL;
         }
     }
     
@@ -242,8 +260,6 @@ static void *place(void *ptr, size_t asize)
     }
     
     else if (asize >= 120) { 
-        // from 73 ~ 120
-        // 2^6 + 8 + 1 ~ 2^7 - 8
 
         // Split block
         PUT(HDRP(ptr), PACK(remainder, 0)); 
@@ -257,7 +273,6 @@ static void *place(void *ptr, size_t asize)
     
     else { 
         // Split block
-        // asize=24 요청받았다 => 현재블록할당, 다음블록을 가용리스트에 추가 
         PUT(HDRP(ptr), PACK(asize, 1)); 
         PUT(FTRP(ptr), PACK(asize, 1)); 
         PUT(HDRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); 
@@ -403,7 +418,7 @@ void *mm_realloc(void *ptr, size_t size)
         // 가용 리스트에서 옆의 블록을 제거해준다.
         delete_node(NEXT_BLKP(ptr));
         
-        
+
         PUT(HDRP(ptr), PACK(new_size + remainder, 1));
         PUT(FTRP(ptr), PACK(new_size + remainder, 1)); 
     }
