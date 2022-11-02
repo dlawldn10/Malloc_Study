@@ -116,7 +116,7 @@ static char* free_listp = NULL;
 //최초 가용 블록으로 힙 생성하기
 int mm_init(void)
 {
-    heap_listp = mem_sbrk(4*WSIZE);
+    heap_listp = mem_sbrk(6*WSIZE);
     // 메모리 시스템에서 6워드를 가져와서 초기화한다.
     if (heap_listp == (void *)-1) return -1;
 
@@ -138,7 +138,7 @@ int mm_init(void)
 
 
     // 힙을 CHUNKSIZE 바이트로 확장하고 초기 가용 블록을 생성한다.
-    if(extend_heap(CHUNKSIZE/WSIZE) == NULL) return -1;
+    if(extend_heap(CHUNKSIZE) == NULL) return -1;
 
     return 0;
 }
@@ -150,7 +150,7 @@ static void *extend_heap(size_t words){
     // 8의 배수로 만들기
     // size를 인접 2워드의 배수(8바이트)로 반올림하고
     // 반올림한 size의 힙 공간을 요청한다.
-    size = (words % 2) ? (words+1) * WSIZE : (words) * WSIZE;
+    size = (words % 2) ? (words+1) : (words);
     if ((long)(bp = mem_sbrk(size)) == -1) return NULL;
 
     // 블록 헤더를 설정한다.
@@ -256,7 +256,7 @@ void *mm_malloc(size_t size)
 
     // 가용 공간이 없다면 extendsize만큼 extend_heap을 하고, 늘어난 그 힙에 place한다.
     extendsize = MAX(asize, CHUNKSIZE);
-    if ((bp = extend_heap(extendsize/WSIZE)) == NULL) return NULL;
+    if ((bp = extend_heap(extendsize)) == NULL) return NULL;
 
     place(bp, asize);
     return bp;
@@ -346,36 +346,38 @@ void putFreeBlock(void* bp) {
 //  할당한 블록의 크기를 바꾼다.
 void *mm_realloc(void *bp, size_t size)
 {
-
-    // 크기를 조절하고 싶은 힙의 시작 포인터
-    void *oldptr = ptr;
-    // 크기 조절 뒤의 새 힙의 시작 포인터
-    void *newptr;
-    // 복사할 힙의 크기
-    size_t copySize;
-    
-    // place를 통해 header, footer가 배정된다.
-    newptr = mm_malloc(size);
-    // malloc 수행을 실패했다면
-    if (newptr == NULL) {
-        return NULL;
+    // size가 0보다 작으면 free 시킨다.
+    if(size <= 0){
+        mm_free(bp);
+        return 0;
     }
-    
+
+    // bp가 NULL이라면 그만큼 malloc
+    if(bp == NULL){
+        return mm_malloc(size);
+    }
+
+    // size만큼 malloc을 수행한 주소값.
+    void *newp = mm_malloc(size);
+    // malloc 수행을 실패했다면
+    if(newp == NULL){
+        return 0;
+    }
 
     // 예전 size와 현재 size를 비교하여
-    copySize = GET_SIZE(HDRP(oldptr));
+    size_t oldsize = GET_SIZE(HDRP(bp));
     // 현재 바꾸고자 하는 size가 예전 사이즈보다 작다면
-    if (size < copySize) {    
-        // 추후 메모리를 이만큼만 복사해 갈 것이기 때문에 copySize size로 갱신한다.
-        copySize = size;
+    if(size < oldsize){
+        // 추후 메모리를 이만큼만 복사해 갈 것이기 때문에 oldsize를 size로 갱신한다.
+        oldsize = size;
     }
     // 원래 있던 메모리를 복사하여 새로운 곳에 할당한다.
-    memcpy(newptr, oldptr, copySize);
+    memcpy(newp, bp, oldsize);
     // 원래 있던 메모리를 free해준다.
-    mm_free(oldptr); 
+    mm_free(bp);
 
-    return newptr;
-
+    // 새로 할당된 주소값을 리턴한다.
+    return newp;
 }
 
 
