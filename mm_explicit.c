@@ -23,16 +23,11 @@
  * provide your team information in the following struct.
  ********************************************************/
 team_t team = {
-    /* Team name */
-    "ateam",
-    /* First member's full name */
-    "Harry Bovik",
-    /* First member's email address */
-    "bovik@cs.cmu.edu",
-    /* Second member's full name (leave blank if none) */
+    "team5",
+    "Jiwoo Lim",
+    "dlawldn10@gmail.com",
     "",
-    /* Second member's email address (leave blank if none) */
-    ""
+    "",
 };
 
 /* single word (4) or double word (8) alignment */
@@ -102,7 +97,7 @@ void *mm_malloc(size_t);
 void mm_free(void *);
 void *mm_realloc(void *, size_t);
 static void *find_fit(size_t);
-static void place(void *, size_t);
+static void *place(void *, size_t);
 static void *coalesce(void *);
 void putFreeBlock(void *);
 void removeBlock(void *);
@@ -250,7 +245,7 @@ void *mm_malloc(size_t size)
     // asize가 들어갈 수 있는 가용 공간을 찾았다면
     if ((bp = find_fit(asize)) != NULL){
         // 그 자리에 할당한다.
-        place(bp, asize);
+        bp = place(bp, asize);
         return bp;
     }
 
@@ -258,7 +253,7 @@ void *mm_malloc(size_t size)
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize)) == NULL) return NULL;
 
-    place(bp, asize);
+    bp = place(bp, asize);
     return bp;
 }
 
@@ -281,35 +276,53 @@ static void *find_fit(size_t asize){
 
 
 // 가용 블록을 allocate 처리한다.
-static void place(void *bp, size_t asize){
-    size_t csize = GET_SIZE(HDRP(bp));
+static void *place(void *ptr, size_t asize){
+    size_t ptr_size = GET_SIZE(HDRP(ptr));
+    size_t remainder = ptr_size - asize;
+    // ptr_size = 2^12 - 20
+    // asize = 120
+    // remainder = 2^12 - 140
+    
+    removeBlock(ptr);
 
-    // 해당 블록을 할당해야 하므로 free 리스트에서 제거한다.
-    removeBlock(bp);
-
-    // 분할이 가능한 경우
-    // 할당하고 남은 메모리가 free 블록을 만들 수 있는 4개의 word가 되느냐
-    // header/footer/prec/next가 필요하니 최소 4개의 word는 필요하다.
-    if ((csize - asize) >= (2*DSIZE)){
-        // 앞의 블록은 할당시킨다.
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
-
-        // 뒤의 블록은 free시킨다.
-        bp = NEXT_BLKP(bp);
-        PUT(HDRP(bp), PACK(csize-asize, 0));
-        PUT(FTRP(bp), PACK(csize-asize, 0));
-
-        // free 리스트의 첫 번째에 분할된, 즉 새롭게 수정된 free 블록이 추가된다.
-        putFreeBlock(bp);
+    /*
+        split할 때 aszie 기준 최적은 73부터이고,  120 초과시 core dumped error 발생. 
+        asize가 120이면, 
+        remainder = ptr_size - 120
+        ptr_size는 120이상일 것이다 (seglist에서 찾아왔으므로)
+        remainder는 0이상일 것이다 
+    */
+    
+    if (remainder <= DSIZE * 2) {
+        // Do not split block 
+        PUT(HDRP(ptr), PACK(ptr_size, 1)); 
+        PUT(FTRP(ptr), PACK(ptr_size, 1)); 
     }
-    // 분할이 불가능한 경우
-    // csize - asize가 2 * DSIZE보다 작다는 것은 할당되고 남은 공간에 header/footer/prec/next가 들어갈 자리가 충분치 않음을 의미한다. 
-    // 최소한의 크기를 가지는 free 블록을 만들 수 없으므로 어쩔 수 없이 주소 정렬을 위해 내부 단편화를 진행한다.
-    else {
-        PUT(HDRP(bp), PACK(csize, 1));
-        PUT(FTRP(bp), PACK(csize, 1));
+    
+    else if (asize >= 120) { 
+        // from 73 ~ 120
+        // 2^6 + 8 + 1 ~ 2^7 - 8
+
+        // Split block
+        PUT(HDRP(ptr), PACK(remainder, 0));  // remainder = 2^12 - 140
+        PUT(FTRP(ptr), PACK(remainder, 0));
+
+        PUT(HDRP(NEXT_BLKP(ptr)), PACK(asize, 1));
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(asize, 1));
+        putFreeBlock(ptr);
+        return NEXT_BLKP(ptr);
     }
+    
+    else { 
+        // Split block
+        // asize=24 요청받았다 => 현재블록할당, 다음블록을 가용리스트에 추가 
+        PUT(HDRP(ptr), PACK(asize, 1)); 
+        PUT(FTRP(ptr), PACK(asize, 1)); 
+        PUT(HDRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); 
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); 
+        putFreeBlock(NEXT_BLKP(ptr));
+    }
+    return ptr;
 }
 
 
